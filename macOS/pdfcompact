@@ -1,0 +1,89 @@
+#!/bin/sh
+
+# compact PDF tool
+
+# code reference 
+#   https://chitoku.jp/programming/bash-getopts-long-options
+#   https://qiita.com/peaceiris/items/f1f4c9734b98cf9c7113
+
+set -eu
+: "${LANG:=C}"
+
+# check require commands
+if ! type gs >/dev/null 2>&1; then
+    brew install ghostscript
+fi
+
+# table
+
+COMPRESS_LEVELS=( default prepress printer ebook screen )
+
+# main
+
+VERSION="0.1"
+
+parser_definition() {
+  setup   REST help:usage -- "Usage: $(basename $0) [options]... [arguments]..." ''
+  msg -- 'Options:'
+  flag    OPT_OUTPUT_SAMPLE     -S --output-samples on:1 init:=0    -- "output compress level samples"
+  flag    OPT_COMPRESS_LEVEL    -1 --low  on:1 no: init:=3          -- "low compress"
+  flag    OPT_COMPRESS_LEVEL    -2        on:2 no: init:=3 hidden:1
+  flag    OPT_COMPRESS_LEVEL    -3        on:3 no: init:=3 hidden:1
+  flag    OPT_COMPRESS_LEVEL    -4        on:4 no: init:=3 hidden:1
+  flag    OPT_COMPRESS_LEVEL    -5 --high on:5 no: init:=3          -- "high compress"
+  disp    :usage  -h --help
+  disp    VERSION --version
+}
+
+eval "$(cd $(dirname $0)/../libs/getoptions ; src/getoptions parser_definition) exit 1"
+
+if [ 0 -lt ${#@} ]; then
+    OPT_INPUT="$1"
+    OPT_OUTPUT="${OPT_INPUT%.pdf}-out.pdf"
+fi
+if [ 1 -lt ${#@} ]; then
+    OPT_OUTPUT="$2"
+fi
+
+#echo "OPT_OUTPUT_SAMPLE: $OPT_OUTPUT_SAMPLE"
+#echo "OPT_COMPRESS_LEVEL: $OPT_COMPRESS_LEVEL"
+#echo "OPT_INPUT: $OPT_INPUT"
+#echo "OPT_OUTPUT: $OPT_OUTPUT"
+#echo "@: $@"
+#echo "@: ${#@}"
+#echo ">> $OPT_COMPRESS_LEVEL $OPT_INPUT $OPT_OUTPUT"
+
+if [ ! -f "$OPT_INPUT" ]; then
+    usage
+fi
+
+
+if [ 0 -ne $OPT_OUTPUT_SAMPLE ]; then
+    COMPRESS_LEVEL=1
+    for COMPRESS_LEVEL_TEXT in "${COMPRESS_LEVELS[@]}" ; do
+        $0 -$COMPRESS_LEVEL "$OPT_INPUT" "${OPT_OUTPUT%.pdf}-$COMPRESS_LEVEL($COMPRESS_LEVEL_TEXT).pdf"
+        COMPRESS_LEVEL=$(( $COMPRESS_LEVEL + 1 ))
+    done
+    exit
+fi
+
+# based on https://qiita.com/peaceiris/items/f1f4c9734b98cf9c7113
+gs \
+    -sDEVICE=pdfwrite \
+    -dCompatibilityLevel=1.4 \
+    -dPDFSETTINGS=/${COMPRESS_LEVELS[$(( $OPT_COMPRESS_LEVEL - 1 ))]} \
+    -dNOPAUSE \
+    -dQUIET \
+    -dBATCH \
+    -sOutputFile="$OPT_OUTPUT" \
+    "$OPT_INPUT"
+
+FSIZE_INPUT=$(wc -c < "$OPT_INPUT")
+FSIZE_INPUT=${FSIZE_INPUT## }
+FSIZE_OUTPUT=$(wc -c < "$OPT_OUTPUT")
+FSIZE_OUTPUT=${FSIZE_OUTPUT## }
+COMPRESS=$(( 10000 - $FSIZE_OUTPUT * 10000 / $FSIZE_INPUT ))
+COMPRESS_LOW=$(( $COMPRESS % 100 + 100 ))
+COMPRESS=$(( $COMPRESS / 100 )).${COMPRESS_LOW:1}
+
+echo "level: ${COMPRESS_LEVELS[$(( $OPT_COMPRESS_LEVEL - 1 ))]} Input: $FSIZE_INPUT bytes; Output: $FSIZE_OUTPUT bytes; Compression: $COMPRESS%, saving: $(( -$FSIZE_OUTPUT + $FSIZE_INPUT )) bytes;"
