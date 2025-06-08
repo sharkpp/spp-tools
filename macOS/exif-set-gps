@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# -----------------------------
+# 画像ファイルに位置情報のEXIFを設定
+# -----------------------------
+
+if [ "" == "$4" ]; then
+  echo "usage: $0 <GPSLatitude> <GPSLongitude> <FILENAME>"
+  exit
+fi
+
+GPSLatitude=$1
+GPSLongitude=$2
+shift
+shift
+FILENAME=$(ls $*)
+
+#echo TIMESTAMP=$TIMESTAMP
+#echo FILENAME=$FILENAME
+
+exiftool \
+  -P -overwrite_original_in_place \
+  -GPSLatitude=$GPSLatitude   -GPSLatitudeRef=N \
+  -GPSLongitude=$GPSLongitude -GPSLongitudeRef=E \
+  $FILENAME
+

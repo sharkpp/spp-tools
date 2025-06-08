@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# -------------------------------------------------
+# codomonから大きい写真を取得
+# -------------------------------------------------
+
+DEBUG=0
+
+#echo --------------------
+
+if [ "" == "$1" ]; then
+  echo "usage: $0 <URL> [<URL> ...]"
+  exit
+fi
+
+# 探索範囲の最大値
+SEARCH_MAX_WIDTH=5000
+
+while [ "" != "$1" ]; do
+
+    URL=$1
+    URL_BASE=$(echo "$URL" | sed -e "s/\?.*$//g")
+    URL_FNAME=$(basename $URL_BASE)
+    URL_FNAME=${URL_FNAME//.jpeg/.jpg}
+    URL_QUERY=$(echo "$URL" | sed -e "s/^.*\?//g")
+
+    if [ $DEBUG -eq 1 ]; then
+        echo --------------------
+        echo "Processing URL: $URL_BASE"
+    fi
+
+    while IFS_=$'\x00' read LINE ; do
+    IFS='=' read KEY VALUE <<< "${LINE}"
+    KEY=$(echo "${KEY//-/_}" | tr 'a-z' 'A-Z')
+    #echo $KEY: $VALUE
+    eval 'URL_Q_'$KEY'="'$VALUE'"'
+    done <<EOL
+`echo -en "${URL_QUERY//&/\\n}"`
+EOL
+
+    if [ $DEBUG -eq 1 ]; then
+        echo --------------------
+        echo URL=$URL
+        echo URL_QUERY=$URL_QUERY
+        echo URL_Q_HEIGHT=$URL_Q_HEIGHT
+        echo URL_Q_WIDTH=$URL_Q_WIDTH
+        echo URL_FNAME=$URL_FNAME
+    fi
+
+    # 初期幅
+    INITIAL_WIDTH=$URL_Q_WIDTH
+    # 成功した最後の幅を保持する変数
+    LAST_SUCCESSFUL_WIDTH=$INITIAL_WIDTH
+    # 探索範囲の初期設定
+    min_width=$INITIAL_WIDTH
+    max_width=$SEARCH_MAX_WIDTH
+    # 試行回数カウンター
+    attempts=0
+
+    while [ "$min_width" -le "$max_width" ]; do
+        attempts=$((attempts + 1))
+
+        # 中央値を計算（整数演算なので小数点以下は切り捨てられます）
+        current_width=$(( (min_width + max_width) / 2 ))
+
+        # 0や負の値になることを防ぐ（特に初期値が小さい場合や計算ミスで）
+        if [ "$current_width" -lt 1 ]; then
+            current_width=1
+        fi
+        
+        if [ $DEBUG -eq 1 ]; then
+            echo "Attempt $attempts: Testing width range [${min_width}, ${max_width}], trying width: $current_width"
+        fi
+
+        # curlで画像を要求し、HTTPステータスコードを取得します。
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL/width=$URL_Q_WIDTH/width=$current_width}")
+
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+            if [ $DEBUG -eq 1 ]; then
+                echo "  Success: Width $current_width returned a 200 OK. Looking for larger width."
+            fi
+            LAST_SUCCESSFUL_WIDTH=$current_width
+            min_width=$((current_width + 1)) # より大きな幅を探す
+        elif [ "$HTTP_STATUS" -eq 503 ]; then
+            if [ $DEBUG -eq 1 ]; then
+                echo "  Error: Width $current_width returned a 503 Service Unavailable. This width is too large."
+            fi
+            max_width=$((current_width - 1)) # より小さな幅を探す
+        else
+            if [ $DEBUG -eq 1 ]; then
+                echo "  Unexpected HTTP status: $HTTP_STATUS for width $current_width. Exiting."
+            fi
+            break # 予期せぬエラーで終了
+        fi
+
+        sleep 0.1 # サーバーへの負荷を軽減するため、少し待機します
+    done
+
+    if [ $DEBUG -eq 1 ]; then
+        echo ""
+        echo "二分探索が完了しました。"
+        echo "取得できた最大の画像幅は: ${LAST_SUCCESSFUL_WIDTH} です。"
+    fi
+
+    # 最大の幅で実際に画像をダウンロードする例 (必要であればコメント解除)
+    curl -o "$URL_FNAME" "${URL/width=$URL_Q_WIDTH/width=$LAST_SUCCESSFUL_WIDTH}"
+
+    shift
+done
+

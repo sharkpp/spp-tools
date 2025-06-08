@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# ---------------------------------------
+# 画像ファイルに日付をタイムスタンプとEXIFを設定
+# ---------------------------------------
+
+function normalize_timestamp() {
+  local DATE_STR="$1"
+  local FMT="${2:-%Y%m%d%H%M}"
+
+  if [ "darwin" == "${OSTYPE:0:6}" ]; then
+    if ! type gdate > /dev/null 2>&1 ; then
+      if         ! date -j -f "%Y/%m/%d %H:%M:%S" "${DATE_STR}" +"$FMT" 2>/dev/null ; then
+        if       ! date -j -f "%Y/%m/%dT%H:%M:%S" "${DATE_STR}" +"$FMT" 2>/dev/null ; then
+          if     ! date -j -f "%Y-%m-%d %H:%M:%S" "${DATE_STR}" +"$FMT" 2>/dev/null ; then
+            if   ! date -j -f "%Y-%m-%dT%H:%M:%S" "${DATE_STR}" +"$FMT" 2>/dev/null ; then
+              if ! date -j -f "%Y%m%d%H%M%S"      "${DATE_STR}" +"$FMT" 2>/dev/null ; then
+                echo invalid timestamp format >&2
+              fi
+            fi
+          fi
+        fi
+      fi
+    else
+      gdate -d "${DATE_STR}" +"$FMT"
+    fi
+  else
+    date -d "${DATE_STR}" +"$FMT"
+  fi
+}
+
+#normalize_timestamp "2025/11/15 10:20:22"
+#normalize_timestamp "2025/11/15T10:20:22"
+#normalize_timestamp "2025/11/15 10:20:22"
+#normalize_timestamp "2025-11-15T10:20:22"
+#normalize_timestamp "20251115102022"
+
+if [ "" == "$1" ]; then
+  echo "usage: $0 [<TIMESTAMP> [<GPS>]] <FILENAME>"
+  exit
+fi
+
+FILENAME=
+TIMESTAMP=$(normalize_timestamp "$(date +%Y%m%d%H%M%S)")
+for I in $(eval "echo {$#..1}") ; do
+  ARG="$(eval "echo \${$I}")"
+  if [ -f "$ARG" ]; then
+    FILENAME="$FILENAME$ARG "
+  elif [ 1 -eq $I ]; then
+    TIMESTAMP=$(normalize_timestamp "$1")
+    break
+  fi
+done
+
+echo TIMESTAMP=$TIMESTAMP
+echo FILENAME=$FILENAME
+
+if [ "" == "$TIMESTAMP" ]; then
+  exit
+fi
+
+touch -t $TIMESTAMP $FILENAME
+exiftool \
+  -P -overwrite_original_in_place \
+  "-AllDates<FileModifyDate" \
+  $FILENAME
+
