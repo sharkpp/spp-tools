@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# スクリプト名: extract_pdf_images.sh
+# 説明: PDFから画像をできるだけ高画質で抽出します。
+
+# 使用法: ./extract_pdf_images.sh <入力PDFファイル> [出力ディレクトリ]
+
+#pdfimages (Popplerユーティリティ)
+# Debian/Ubuntu: sudo apt-get install poppler-utils
+# CentOS/RHEL: sudo yum install poppler-utils (または dnf install poppler-utils)
+# macOS (Homebrew): brew install poppler
+#ImageMagick
+# Debian/Ubuntu: sudo apt-get install imagemagick
+# CentOS/RHEL: sudo yum install ImageMagick (または dnf install ImageMagick)
+# macOS (Homebrew): brew install imagemagick
+
+
+# 必要なコマンドのチェック
+command -v pdfimages >/dev/null 2>&1 || { echo >&2 "エラー: 'pdfimages' が見つかりません。Popplerユーティリティをインストールしてください。"; exit 1; }
+command -v convert >/dev/null 2>&1 || { echo >&2 "警告: 'convert' (ImageMagick) が見つかりません。一部の画像抽出機能が利用できない可能性があります。"; }
+
+INPUT_PDF="$1"
+OUTPUT_DIR="$2"
+
+if [ -z "$INPUT_PDF" ]; then
+    echo "エラー: 入力PDFファイルを指定してください。"
+    echo "使用法: $0 <入力PDFファイル> [出力ディレクトリ]"
+    exit 1
+fi
+
+if [ ! -f "$INPUT_PDF" ]; then
+    echo "エラー: '$INPUT_PDF' が見つかりません。"
+    exit 1
+fi
+
+# 出力ディレクトリが指定されていない場合、PDFファイル名から自動生成
+if [ -z "$OUTPUT_DIR" ]; then
+    FILENAME=$(basename -- "$INPUT_PDF")
+    FILENAME_NO_EXT="${FILENAME%.*}"
+    OUTPUT_DIR="${FILENAME_NO_EXT}_images"
+fi
+
+echo "--------------------------------------------------"
+echo "PDFから画像を抽出します:"
+echo "入力PDF: $INPUT_PDF"
+echo "出力ディレクトリ: $OUTPUT_DIR"
+echo "--------------------------------------------------"
+
+mkdir -p "$OUTPUT_DIR"
+if [ $? -ne 0 ]; then
+    echo "エラー: 出力ディレクトリ '$OUTPUT_DIR' を作成できませんでした。"
+    exit 1
+fi
+
+echo ""
+echo "--- pdfimages を使った画像抽出 (推奨: オリジナル品質)"
+# -j: JPEG圧縮画像をそのまま抽出
+# -jp2: JPX (JPEG 2000) 圧縮画像をそのまま抽出
+# -all: すべての画像を抽出（これには-jや-jp2が含まれることが多いが、明示的に指定）
+# -q: エラーメッセージ以外の出力を抑制
+pdfimages -j -jp2 "$INPUT_PDF" "$OUTPUT_DIR/img"
+
+if [ $? -eq 0 ]; then
+    EXTRACTED_COUNT=$(ls -1q "$OUTPUT_DIR"/img* | wc -l)
+    if [ "$EXTRACTED_COUNT" -gt 0 ]; then
+        echo "pdfimages で $EXTRACTED_COUNT 個の画像を抽出しました。"
+    else
+        echo "pdfimages で画像は抽出されませんでした。別の方法を試みます。"
+    fi
+else
+    echo "pdfimages の実行中にエラーが発生しました。"
+fi
+
+echo ""
+echo "--- ImageMagick を使った画像抽出 (代替: 高解像度レンダリング)"
+echo "注: この方法はPDFを画像にレンダリングするため、元の埋め込み画像とは異なる場合があります。"
+echo "    時間がかかったり、ファイルサイズが大きくなったりする可能性があります。"
+
+# ImageMagick がインストールされているか確認
+if command -v convert >/dev/null 2>&1; then
+    # pdfimagesで画像が抽出されなかった、またはさらに高解像度が必要な場合
+    if [ "$EXTRACTED_COUNT" -eq 0 ] || true; then # 常にImageMagickも試す場合はtrueにする
+        # density を高く設定することで、高解像度でPDFをレンダリングします。
+        # 一般的に、300-600 DPI が印刷品質として使われます。
+        # 必要に応じてさらに高くすることも可能ですが、メモリと処理時間が大幅に増加します。
+        # -alpha remove は透明度情報を削除します。
+        # -background white は背景色を白に設定します。
+        # +adjoin は各ページを個別のファイルとして出力します。
+        # -trim は余白を自動的にトリミングします。
+        # 出力形式は JPEG, PNG, TIFF など選択できます。ここではPNGを高画質抽出の例としています。
+        convert -density 300 "$INPUT_PDF" -quality 100 -background white -alpha remove -trim "$OUTPUT_DIR/page-%03d.png"
+
+        if [ $? -eq 0 ]; then
+            echo "ImageMagick で高解像度画像を抽出しました。"
+        else
+            echo "ImageMagick の実行中にエラーが発生しました。"
+        fi
+    fi
+else
+    echo "ImageMagick ('convert' コマンド) が見つからないため、このステップはスキップします。"
+fi
+
+echo ""
+echo "処理が完了しました。画像は '$OUTPUT_DIR' ディレクトリに保存されています。"
+echo "--------------------------------------------------"
