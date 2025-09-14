@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# 引数が指定されているか確認
+if [ "$#" -eq 0 ]; then
+    echo "使用法: $0 <画像ファイル1> <画像ファイル2> ... [出力ファイル名.pdf]"
+    exit 1
+fi
+
+# 画像ファイルのリストを初期化
+IMAGES=()
+# 出力ファイル名を初期化
+OUTPUT_FILE=""
+
+# 引数をループして画像と出力ファイルを分離
+for arg in "$@"; do
+    # 引数が.jpgまたは.jpegで終わる場合、画像リストに追加
+    if [[ "$arg" =~ \.(jpg|jpeg|JPG|JPEG)$ ]]; then
+        IMAGES+=("$arg")
+    # 引数が.pdfで終わり、出力ファイルがまだ設定されていない場合、出力ファイルとして設定
+    elif [[ "$arg" =~ \.pdf$ ]] && [ -z "$OUTPUT_FILE" ]; then
+        OUTPUT_FILE="$arg"
+    fi
+done
+
+# 画像ファイルが1つも見つからない場合はエラー
+if [ ${#IMAGES[@]} -eq 0 ]; then
+    echo "エラー: 入力画像ファイルが見つかりません。引数に画像ファイル（.jpg/.jpeg）を指定してください。"
+    exit 1
+fi
+
+# 出力ファイル名が指定されていない場合、日時から生成
+if [ -z "$OUTPUT_FILE" ]; then
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    OUTPUT_FILE="output_${TIMESTAMP}.pdf"
+    echo "出力ファイル名が指定されていないため、'${OUTPUT_FILE}'として生成します。"
+fi
+
+# img2pdfがインストールされているか確認
+if ! command -v img2pdf &> /dev/null; then
+    echo "エラー: 'img2pdf' コマンドが見つかりません。インストールしてください。"
+    echo "例: pip install img2pdf"
+    exit 1
+fi
+
+# img2pdfを実行
+img2pdf "${IMAGES[@]}" -o "$OUTPUT_FILE"
+
+echo "PDFが作成されました: $OUTPUT_FILE"
