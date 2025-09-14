@@ -4,7 +4,7 @@
 # 画像ファイルに位置情報のEXIFを設定
 # -----------------------------
 
-if [ "" == "$4" ]; then
+if [ "" == "$3" ]; then
   echo "usage: $0 <GPSLatitude> <GPSLongitude> <FILENAME>"
   exit
 fi
